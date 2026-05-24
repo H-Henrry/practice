@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智慧練習器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f1f5f9;
+        }
+        
+        .input-standard {
+            width: 100%;
+            height: 56px;
+            background: white;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 8px 12px;
+            font-size: 1.2rem;
+            transition: all 0.2s;
+            outline: none;
+        }
+        .input-standard:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 4px rgba(99,102,241,0.1);
+        }
+
+        .card {
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+        }
+
+        /* 容器結構 */
+        .quiz-container {
+            position: relative;
+            width: 100%;
+            height: 64px;
+            margin-bottom: 24px;
+            border-bottom: 4px solid #e2e8f0;
+        }
+
+        #quiz-input {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            z-index: 20;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            outline: none;
+        }
+
+        /* 英文模式：隱藏密碼點點，但保留光標 */
+        #quiz-input.no-suggestion {
+            color: transparent;
+            caret-color: #6366f1;
+        }
+
+        /* 英文模式：顯示打出來的字 */
+        #input-display {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none; 
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1e293b;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        .delete-btn {
+            color: #94a3af;
+            padding: 8px;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .delete-btn:hover { color: #f43f5e; }
+        
+        .correction-box {
+            border-color: #f43f5e !important;
+        }
+        .correction-box #input-display {
+            color: #e11d48;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #334155;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            font-weight: bold;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 100;
+        }
+
+        .mode-toggle {
+            display: flex;
+            background: #e2e8f0;
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 20px;
+        }
+        .mode-btn {
+            flex: 1;
+            padding: 8px;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: white;
+            color: #6366f1;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+
+    <div id="toast" class="toast">請至少輸入一個答案</div>
+
+    <div class="max-w-md mx-auto p-4">
+        <!-- 設定畫面 -->
+        <div id="setup-view">
+            <h1 class="text-2xl font-black text-slate-800 mb-2 text-center">練習清單設定</h1>
+            
+            <div class="mode-toggle">
+                <button id="mode-en" class="mode-btn active" onclick="setLanguage('en')">英文 (無選字)</button>
+                <button id="mode-zh" class="mode-btn" onclick="setLanguage('zh')">中文 (可選字)</button>
+            </div>
+
+            <div id="rows-container" class="space-y-3 mb-6">
+                <div class="flex items-center gap-2 row-item bg-white p-3 rounded-2xl shadow-sm">
+                    <input type="text" class="input-standard w-5/12" placeholder="題目(可空)" oninput="checkGrow()">
+                    <input type="text" class="input-standard w-5/12" placeholder="答案(必填)" oninput="checkGrow()">
+                    <div class="delete-btn w-1/12 text-center" onclick="clearRow(this)">✕</div>
+                </div>
+            </div>
+            
+            <button onclick="startQuiz()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-transform active:scale-95">
+                開始練習
+            </button>
+        </div>
+
+        <!-- 練習畫面 -->
+        <div id="quiz-view" class="hidden text-center mt-2">
+            <div class="card p-6 mb-6 relative">
+                <div id="progress" class="absolute top-4 left-6 text-xs font-bold text-slate-400">01 / 10</div>
+                
+                <div class="mb-2">
+                    <span id="quiz-mode-tag" class="text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full">基礎練習</span>
+                </div>
+                
+                <h2 id="current-question" class="text-4xl font-bold text-slate-800 mb-8 min-h-[1em]">題目</h2>
+                
+                <div class="quiz-container" id="quiz-input-wrapper">
+                    <!-- 英文模式顯示字體的層 -->
+                    <div id="input-display"></div>
+                    <!-- 實際輸入框 -->
+                    <input type="text" id="quiz-input" 
+                           placeholder="在此輸入答案"
+                           oninput="syncDisplay()"
+                           onkeypress="handleKeyPress(event)">
+                </div>
+                
+                <p id="feedback" class="h-10 font-bold text-base mb-4 transition-all flex items-center justify-center"></p>
+                
+                <div class="flex gap-3">
+                    <button id="submit-btn" onclick="checkAnswer()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white py-4 rounded-xl font-bold shadow-md">
+                        送出答案
+                    </button>
+                    <button id="next-btn" onclick="nextQuestion()" class="hidden flex-1 bg-indigo-600 hover:bg-indigo-700 text-white py-4 rounded-xl font-bold shadow-md">
+                        下一題
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 完成畫面 -->
+        <div id="result-view" class="hidden text-center pt-16">
+            <div class="text-8xl mb-6">🏆</div>
+            <h2 class="text-3xl font-black text-slate-800 mb-4">太棒了！</h2>
+            <p class="text-slate-500 mb-10 text-lg">你已經全數答對並完成訂正。</p>
+            <button onclick="backToSetup()" class="w-full bg-slate-800 py-4 rounded-2xl font-bold text-white mb-4 shadow-lg transition active:scale-95">
+                返回修改題目
+            </button>
+            <button onclick="location.reload()" class="w-full bg-slate-200 py-4 rounded-2xl font-bold text-slate-600 transition">
+                全部清空重來
+            </button>
+        </div>
+    </div>
+
+    <script>
+        let pool = [];
+        let idx = 0;
+        let wrongs = [];
+        let needsCorrection = false;
+        let langMode = 'en';
+
+        function setLanguage(lang) {
+            langMode = lang;
+            document.getElementById('mode-en').classList.toggle('active', lang === 'en');
+            document.getElementById('mode-zh').classList.toggle('active', lang === 'zh');
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.style.opacity = "1";
+            setTimeout(() => t.style.opacity = "0", 2000);
+        }
+
+        function syncDisplay() {
+            const inputEl = document.getElementById('quiz-input');
+            const displayEl = document.getElementById('input-display');
+            const val = inputEl.value;
+
+            if (langMode === 'en') {
+                // 英文模式：把輸入值同步到 display 層
+                displayEl.innerText = val;
+                
+                // 如果有字，隱藏 input 的 placeholder 避免重疊
+                if (val.length > 0) {
+                    inputEl.setAttribute('placeholder', '');
+                } else {
+                    inputEl.setAttribute('placeholder', '在此拼寫單字');
+                }
+            } else {
+                // 中文模式：一般 placeholder 邏輯
+                if (val.length > 0) {
+                    inputEl.setAttribute('placeholder', '');
+                } else {
+                    inputEl.setAttribute('placeholder', '在此輸入答案');
+                }
+            }
+        }
+
+        function checkGrow() {
+            const cont = document.getElementById('rows-container');
+            const last = cont.lastElementChild;
+            const inputs = last.querySelectorAll('input');
+            if (inputs[0].value.trim() !== "" || inputs[1].value.trim() !== "") {
+                addRow();
+            }
+        }
+
+        function addRow() {
+            const cont = document.getElementById('rows-container');
+            const div = document.createElement('div');
+            div.className = 'flex items-center gap-2 row-item bg-white p-3 rounded-2xl shadow-sm';
+            div.innerHTML = `
+                <input type="text" class="input-standard w-5/12" placeholder="題目(可空)" oninput="checkGrow()">
+                <input type="text" class="input-standard w-5/12" placeholder="答案(必填)" oninput="checkGrow()">
+                <div class="delete-btn w-1/12 text-center" onclick="clearRow(this)">✕</div>
+            `;
+            cont.appendChild(div);
+        }
+
+        function clearRow(btn) {
+            const row = btn.parentElement;
+            const rows = document.querySelectorAll('.row-item');
+            if (rows.length === 1) {
+                row.querySelectorAll('input').forEach(i => i.value = "");
+                return;
+            }
+            if (row === rows[rows.length - 1]) {
+                row.querySelectorAll('input').forEach(i => i.value = "");
+            } else {
+                row.remove();
+            }
+        }
+
+        function startQuiz() {
+            const items = document.querySelectorAll('.row-item');
+            pool = [];
+            items.forEach(it => {
+                const inputs = it.querySelectorAll('input');
+                const q = inputs[0].value.trim();
+                const a = inputs[1].value.trim();
+                if (a) pool.push({ q: q || "請聽寫單字", a });
+            });
+
+            if (pool.length === 0) {
+                showToast("請至少輸入一個答案");
+                return;
+            }
+            
+            pool.sort(() => Math.random() - 0.5);
+            
+            const inputEl = document.getElementById('quiz-input');
+            const displayEl = document.getElementById('input-display');
+
+            if (langMode === 'en') {
+                inputEl.type = "password";
+                inputEl.classList.add('no-suggestion');
+                inputEl.setAttribute('autocomplete', 'new-password');
+                displayEl.style.display = "flex";
+                inputEl.placeholder = "在此拼寫單字";
+            } else {
+                inputEl.type = "text";
+                inputEl.classList.remove('no-suggestion');
+                inputEl.removeAttribute('autocomplete');
+                inputEl.style.color = "#1e293b";
+                displayEl.style.display = "none";
+                inputEl.placeholder = "在此輸入答案";
+            }
+
+            document.getElementById('setup-view').classList.add('hidden');
+            document.getElementById('quiz-view').classList.remove('hidden');
+            document.getElementById('quiz-mode-tag').innerText = "基礎練習";
+            document.getElementById('quiz-mode-tag').className = "text-xs font-bold text-indigo-500 bg-indigo-50 px-3 py-1 rounded-full";
+            
+            idx = 0; wrongs = []; needsCorrection = false;
+            render();
+        }
+
+        function render() {
+            const item = pool[idx];
+            document.getElementById('progress').innerText = `${idx + 1} / ${pool.length}`;
+            document.getElementById('current-question').innerText = item.q;
+            
+            const inputEl = document.getElementById('quiz-input');
+            const wrapper = document.getElementById('quiz-input-wrapper');
+            inputEl.value = "";
+            inputEl.disabled = false;
+            wrapper.classList.remove('correction-box');
+            syncDisplay();
+            
+            document.getElementById('feedback').innerText = "";
+            document.getElementById('submit-btn').classList.remove('hidden');
+            document.getElementById('next-btn').classList.add('hidden');
+            
+            setTimeout(() => inputEl.focus(), 100);
+        }
+
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                const submitBtn = document.getElementById('submit-btn');
+                const nextBtn = document.getElementById('next-btn');
+                if (!submitBtn.classList.contains('hidden')) checkAnswer();
+                else if (!nextBtn.classList.contains('hidden')) nextQuestion();
+            }
+        }
+
+        function checkAnswer() {
+            const inputEl = document.getElementById('quiz-input');
+            const user = inputEl.value.trim().toLowerCase();
+            const correct = pool[idx].a.trim().toLowerCase();
+            const fb = document.getElementById('feedback');
+            const wrapper = document.getElementById('quiz-input-wrapper');
+            
+            if (user === "") return;
+
+            if (!needsCorrection) {
+                if (user === correct) {
+                    fb.innerText = "正確！🎯";
+                    fb.className = "h-10 font-bold text-base text-emerald-500";
+                    inputEl.disabled = true;
+                    showNextBtn();
+                } else {
+                    fb.innerText = `錯誤！正確是：${pool[idx].a}`;
+                    fb.className = "h-10 font-bold text-base text-rose-500";
+                    inputEl.value = "";
+                    wrapper.classList.add('correction-box');
+                    needsCorrection = true;
+                    wrongs.push(pool[idx]);
+                    syncDisplay();
+                }
+            } else {
+                if (user === correct) {
+                    fb.innerText = "訂正完成！請按下一題";
+                    fb.className = "h-10 font-bold text-base text-amber-500";
+                    inputEl.disabled = true;
+                    needsCorrection = false;
+                    showNextBtn();
+                } else {
+                    fb.innerText = `訂正錯誤！正確是：${pool[idx].a}`;
+                    inputEl.value = "";
+                    syncDisplay();
+                }
+            }
+        }
+
+        function showNextBtn() {
+            document.getElementById('submit-btn').classList.add('hidden');
+            document.getElementById('next-btn').classList.remove('hidden');
+            document.getElementById('next-btn').focus();
+        }
+
+        function nextQuestion() {
+            idx++;
+            if (idx < pool.length) {
+                render();
+            } else if (wrongs.length > 0) {
+                pool = [...wrongs];
+                wrongs = []; 
+                idx = 0;
+                pool.sort(() => Math.random() - 0.5);
+                document.getElementById('quiz-mode-tag').innerText = "錯題重練 (直到全對)";
+                document.getElementById('quiz-mode-tag').className = "text-xs font-bold text-rose-500 bg-rose-50 px-3 py-1 rounded-full";
+                render();
+            } else {
+                document.getElementById('quiz-view').classList.add('hidden');
+                document.getElementById('result-view').classList.remove('hidden');
+            }
+        }
+
+        function backToSetup() {
+            document.getElementById('result-view').classList.add('hidden');
+            document.getElementById('setup-view').classList.remove('hidden');
+        }
+    </script>
+</body>
+</html>
